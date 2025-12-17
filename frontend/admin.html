@@ -435,9 +435,9 @@ async function fillRoomSelects(){
 }
 
 function fillTimeSelects(){
-  // 09:00~22:00, 30분 단위 시간 옵션 생성
+  // 08:00~22:00, 30분 단위 시간 옵션 생성
   const times = [];
-  for (let h = 9; h <= 22; h++) {
+  for (let h = 8; h <= 22; h++) {
     times.push(`${String(h).padStart(2,"0")}:00`);
     if (h < 22) times.push(`${String(h).padStart(2,"0")}:30`);
   }

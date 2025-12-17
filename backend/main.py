@@ -33,7 +33,7 @@ JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-prod")
 JWT_ALG = "HS256"
 JWT_EXPIRE_MIN = int(os.getenv("JWT_EXPIRE_MIN", "240"))
 
-OPEN_HOUR = 9
+OPEN_HOUR = 8
 CLOSE_HOUR = 22  # end_time max 22:00
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -174,7 +174,7 @@ def validate_time_range(st: time, et: time):
     open_t = time(OPEN_HOUR, 0)
     close_t = time(CLOSE_HOUR, 0)
     if st < open_t or et > close_t:
-        raise HTTPException(status_code=400, detail="Time must be within 09:00~22:00")
+        raise HTTPException(status_code=400, detail="Time must be within 08:00~22:00")
 
 def overlaps(st1: time, et1: time, st2: time, et2: time) -> bool:
     return (st1 < et2) and (st2 < et1)
@@ -737,7 +737,7 @@ def admin_stats(_: Admin = Depends(get_current_admin), db: Session = Depends(get
 
 @app.get("/admin/timetable")
 def admin_timetable(date_str: str = Query(..., alias="date"), _: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    """일자별 강의실 현황 타임테이블 (09:00~22:00, 30분 단위)"""
+    """일자별 강의실 현황 타임테이블 (08:00~22:00, 30분 단위)"""
     d = parse_date(date_str)
     
     # 활성 강의실 목록
@@ -752,9 +752,9 @@ def admin_timetable(date_str: str = Query(..., alias="date"), _: Admin = Depends
         )
     ).scalars().all()
     
-    # 시간 슬롯 생성 (09:00~22:00, 30분 단위)
+    # 시간 슬롯 생성 (08:00~22:00, 30분 단위)
     time_slots = []
-    for hour in range(9, 22):
+    for hour in range(8, 22):
         for minute in [0, 30]:
             time_slots.append(f"{hour:02d}:{minute:02d}")
     time_slots.append("22:00")  # 마지막 슬롯
