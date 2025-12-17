@@ -101,6 +101,7 @@ class Schedule(Base):
     owner_name: Mapped[str] = mapped_column(String(100), default="")
     owner_org: Mapped[str] = mapped_column(String(150), default="")
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    color: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # blue/yellow/pink/green
 
     # 승인 플로우
     status: Mapped[str] = mapped_column(String(20), default="PENDING", index=True)  # PENDING/APPROVED/REJECTED
@@ -227,6 +228,7 @@ class AdminScheduleCreateReq(BaseModel):
     owner_org: str = ""
     memo: Optional[str] = None
     status: str = "APPROVED"  # admin 등록은 기본 APPROVED 추천
+    color: str  # 색깔 필수: blue/yellow/pink/green
 
 class AdminScheduleUpdateReq(BaseModel):
     classroom_id: Optional[int] = None
@@ -239,9 +241,13 @@ class AdminScheduleUpdateReq(BaseModel):
     owner_org: Optional[str] = None
     memo: Optional[str] = None
     status: Optional[str] = None
+    color: Optional[str] = None
 
 class RejectReq(BaseModel):
     reject_reason: str = Field(min_length=1)
+
+class ApproveReq(BaseModel):
+    color: str = Field(min_length=1)  # 승인 시 색깔 필수: blue/yellow/pink/green
 
 class AdminScheduleRes(BaseModel):
     id: int
@@ -258,6 +264,7 @@ class AdminScheduleRes(BaseModel):
     memo: Optional[str]
     status: str
     reject_reason: Optional[str]
+    color: Optional[str]
     created_at: str
 
 
@@ -477,6 +484,7 @@ def _to_admin_res(db: Session, s: Schedule) -> AdminScheduleRes:
         memo=s.memo,
         status=s.status,
         reject_reason=s.reject_reason,
+        color=s.color,
         created_at=s.created_at.isoformat(),
     )
 
@@ -535,6 +543,7 @@ def admin_create_schedule(req: AdminScheduleCreateReq, _: Admin = Depends(get_cu
         owner_org=req.owner_org,
         memo=req.memo,
         status=req.status,
+        color=req.color,
     )
     db.add(s)
     db.commit()
@@ -589,13 +598,15 @@ def admin_update_schedule(schedule_id: int, req: AdminScheduleUpdateReq, _: Admi
         s.status = req.status
         if s.status != "REJECTED":
             s.reject_reason = None
+    if req.color is not None:
+        s.color = req.color
 
     db.commit()
     db.refresh(s)
     return _to_admin_res(db, s)
 
 @app.patch("/admin/schedules/{schedule_id}/approve", response_model=AdminScheduleRes)
-def admin_approve(schedule_id: int, _: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+def admin_approve(schedule_id: int, req: ApproveReq, _: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
     s = db.execute(select(Schedule).where(Schedule.id == schedule_id)).scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail="Schedule not found")
@@ -619,6 +630,7 @@ def admin_approve(schedule_id: int, _: Admin = Depends(get_current_admin), db: S
 
     s.status = "APPROVED"
     s.reject_reason = None
+    s.color = req.color
     db.commit()
     db.refresh(s)
     return _to_admin_res(db, s)
@@ -679,4 +691,84 @@ def admin_stats(_: Admin = Depends(get_current_admin), db: Session = Depends(get
         "rejected_schedules": len(rejected),
         "old_schedules_count": len(old_schedules),
         "old_schedules_cutoff": cutoff.strftime("%Y-%m-%d")
+    }
+
+@app.get("/admin/timetable")
+def admin_timetable(date_str: str = Query(..., alias="date"), _: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """일자별 강의실 현황 타임테이블 (09:00~22:00, 30분 단위)"""
+    d = parse_date(date_str)
+    
+    # 활성 강의실 목록
+    rooms = db.execute(
+        select(Classroom).where(Classroom.is_active == True).order_by(Classroom.room_code)
+    ).scalars().all()
+    
+    # 해당 날짜의 승인된 일정만 조회
+    schedules = db.execute(
+        select(Schedule).where(
+            and_(Schedule.date == d, Schedule.status == "APPROVED")
+        )
+    ).scalars().all()
+    
+    # 시간 슬롯 생성 (09:00~22:00, 30분 단위)
+    time_slots = []
+    for hour in range(9, 22):
+        for minute in [0, 30]:
+            time_slots.append(f"{hour:02d}:{minute:02d}")
+    time_slots.append("22:00")  # 마지막 슬롯
+    
+    # 강의실별로 타임테이블 생성
+    timetable = []
+    for room in rooms:
+        room_schedules = [s for s in schedules if s.classroom_id == room.id]
+        
+        slots = []
+        for slot_time in time_slots[:-1]:  # 마지막 슬롯은 끝 시간으로만 사용
+            slot_start = datetime.strptime(slot_time, "%H:%M").time()
+            slot_end = datetime.strptime(time_slots[time_slots.index(slot_time) + 1], "%H:%M").time()
+            
+            # 이 시간대에 해당하는 일정 찾기
+            occupying_schedule = None
+            for sched in room_schedules:
+                # 일정이 이 슬롯과 겹치는지 확인
+                if sched.start_time <= slot_start and sched.end_time > slot_start:
+                    occupying_schedule = sched
+                    break
+            
+            if occupying_schedule:
+                slots.append({
+                    "time": slot_time,
+                    "occupied": True,
+                    "color": occupying_schedule.color or "gray",
+                    "title": occupying_schedule.title,
+                    "owner": occupying_schedule.owner_name,
+                    "category": occupying_schedule.category,
+                    "schedule_id": occupying_schedule.id,
+                    "start_time": occupying_schedule.start_time.strftime("%H:%M"),
+                    "end_time": occupying_schedule.end_time.strftime("%H:%M"),
+                })
+            else:
+                slots.append({
+                    "time": slot_time,
+                    "occupied": False,
+                    "color": None,
+                    "title": None,
+                    "owner": None,
+                    "category": None,
+                    "schedule_id": None,
+                    "start_time": None,
+                    "end_time": None,
+                })
+        
+        timetable.append({
+            "classroom_id": room.id,
+            "room_code": room.room_code,
+            "display_name": room.display_name,
+            "slots": slots,
+        })
+    
+    return {
+        "date": d.strftime("%Y-%m-%d"),
+        "time_slots": time_slots[:-1],  # 시작 시간만 반환
+        "timetable": timetable,
     }
