@@ -419,6 +419,40 @@ def public_create_reservation(req: PublicScheduleReq, db: Session = Depends(get_
     db.commit()
     return {"success": True, "id": s.id}
 
+@app.get("/public/my-reservations")
+def public_my_reservations(
+    name: str = Query(..., min_length=1),
+    org: str = Query(..., min_length=1),
+    db: Session = Depends(get_db)
+):
+    """사용자가 본인의 신청 내역 조회 (이름 + 소속으로)"""
+    schedules = db.execute(
+        select(Schedule).where(
+            and_(
+                Schedule.owner_name == name.strip(),
+                Schedule.owner_org == org.strip(),
+                Schedule.category == "RENTAL"
+            )
+        ).order_by(Schedule.date.desc(), Schedule.start_time.desc())
+    ).scalars().all()
+    
+    result = []
+    for s in schedules:
+        room = db.execute(select(Classroom).where(Classroom.id == s.classroom_id)).scalar_one()
+        result.append({
+            "id": s.id,
+            "classroom_name": room.display_name,
+            "date": s.date.strftime("%Y-%m-%d"),
+            "start_time": s.start_time.strftime("%H:%M"),
+            "end_time": s.end_time.strftime("%H:%M"),
+            "status": s.status,
+            "reject_reason": s.reject_reason,
+            "memo": s.memo,
+            "created_at": s.created_at.isoformat()
+        })
+    
+    return result
+
 
 # =========================
 # Admin APIs (관리자)

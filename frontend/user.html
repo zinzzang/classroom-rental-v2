@@ -59,6 +59,26 @@
       </div>
     </div>
   </div>
+
+  <!-- 내 신청 내역 조회 -->
+  <div class="bg-white rounded shadow p-5 mt-6">
+    <h2 class="text-xl font-semibold mb-3">내 신청 내역 조회</h2>
+    <p class="text-sm text-gray-600 mb-4">신청 시 입력한 이름과 소속으로 본인의 신청 내역을 확인할 수 있습니다.</p>
+    
+    <div class="flex gap-3 items-end mb-4">
+      <div>
+        <label class="text-sm font-semibold">이름</label>
+        <input id="searchName" class="border rounded p-2 block" placeholder="이름" />
+      </div>
+      <div>
+        <label class="text-sm font-semibold">소속</label>
+        <input id="searchOrg" class="border rounded p-2 block" placeholder="소속" />
+      </div>
+      <button id="searchBtn" class="px-4 py-2 bg-gray-900 text-white rounded">조회</button>
+    </div>
+
+    <div id="myReservations" class="space-y-3"></div>
+  </div>
 </div>
 
 <script>
@@ -175,14 +195,92 @@ async function submit(){
 
     setMsg("신청 완료! (승인 대기)", true);
     await loadSchedule();
+    
+    // 자동으로 내 신청 내역 조회
+    document.getElementById("searchName").value = name;
+    document.getElementById("searchOrg").value = org;
+    await searchMyReservations();
   }catch(e){
     setMsg(e.message, false);
+  }
+}
+
+async function searchMyReservations(){
+  try{
+    const name = document.getElementById("searchName").value.trim();
+    const org = document.getElementById("searchOrg").value.trim();
+    
+    if(!name || !org) {
+      document.getElementById("myReservations").innerHTML = '<div class="p-3 rounded bg-gray-50 border text-sm">이름과 소속을 입력해주세요.</div>';
+      return;
+    }
+
+    document.getElementById("myReservations").innerHTML = '<div class="p-3 rounded bg-gray-50 border text-sm">조회 중...</div>';
+
+    const list = await fetchJSON(`${API_BASE}/public/my-reservations?name=${encodeURIComponent(name)}&org=${encodeURIComponent(org)}`);
+    
+    const container = document.getElementById("myReservations");
+    container.innerHTML = "";
+
+    if(list.length === 0) {
+      container.innerHTML = '<div class="p-3 rounded bg-gray-50 border text-sm">신청 내역이 없습니다.</div>';
+      return;
+    }
+
+    list.forEach(item => {
+      let statusBadge = "";
+      let statusColor = "";
+      
+      if(item.status === "PENDING") {
+        statusBadge = "승인 대기";
+        statusColor = "bg-yellow-100 text-yellow-800 border-yellow-300";
+      } else if(item.status === "APPROVED") {
+        statusBadge = "승인됨 ✓";
+        statusColor = "bg-green-100 text-green-800 border-green-300";
+      } else if(item.status === "REJECTED") {
+        statusBadge = "반려됨 ✗";
+        statusColor = "bg-red-100 text-red-800 border-red-300";
+      }
+
+      let html = `
+        <div class="border rounded p-4 ${statusColor}">
+          <div class="flex justify-between items-start mb-2">
+            <div class="font-semibold">
+              📅 ${item.date} | 🏛️ ${item.classroom_name}
+            </div>
+            <div class="px-3 py-1 rounded text-sm font-bold">
+              ${statusBadge}
+            </div>
+          </div>
+          <div class="text-sm">
+            ⏰ ${item.start_time} ~ ${item.end_time}
+          </div>
+          <div class="text-sm text-gray-700 mt-2">
+            <strong>신청 사유:</strong> ${item.memo || "-"}
+          </div>
+      `;
+
+      if(item.status === "REJECTED" && item.reject_reason) {
+        html += `
+          <div class="mt-2 pt-2 border-t border-red-300">
+            <div class="text-sm font-semibold text-red-900">반려 사유:</div>
+            <div class="text-sm text-red-800 mt-1">${item.reject_reason}</div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      container.innerHTML += html;
+    });
+  }catch(e){
+    document.getElementById("myReservations").innerHTML = `<div class="p-3 rounded bg-red-50 border border-red-300 text-sm text-red-700">오류: ${e.message}</div>`;
   }
 }
 
 document.getElementById("refresh").addEventListener("click", loadSchedule);
 document.getElementById("submit").addEventListener("click", submit);
 document.getElementById("classroom").addEventListener("change", () => { renderBusy(); disableUnavailable(); });
+document.getElementById("searchBtn").addEventListener("click", searchMyReservations);
 
 (async function init(){
   document.getElementById("date").value = todayStr();
