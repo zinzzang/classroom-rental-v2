@@ -219,10 +219,20 @@
           <div class="text-sm text-gray-600">총 일정</div>
           <div id="statSchedules" class="text-3xl font-bold">-</div>
         </div>
-        <div class="border rounded p-4">
+        <div class="border rounded p-4 cursor-pointer hover:bg-orange-50 transition" id="statPendingCard">
           <div class="text-sm text-gray-600">승인 대기</div>
           <div id="statPending" class="text-3xl font-bold text-orange-600">-</div>
+          <div class="text-xs text-gray-500 mt-1">클릭하여 확인</div>
         </div>
+      </div>
+
+      <!-- PENDING 일정 목록 (통계 탭용) -->
+      <div id="statsPendingSection" class="hidden border-t pt-4 mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-lg">승인 대기 중인 일정</h3>
+          <button id="closeStatsPending" class="text-gray-500 hover:text-gray-700">✕ 닫기</button>
+        </div>
+        <div id="statsPendingList" class="space-y-3"></div>
       </div>
 
       <!-- 타임테이블 -->
@@ -649,6 +659,12 @@ async function confirmApprove(){
     setText("schedMsg","승인 완료", true);
     await loadSchedules();
     await loadPendingAlert();
+    await loadStats();
+    
+    // 통계 탭의 PENDING 섹션이 열려있으면 새로고침
+    if(!document.getElementById("statsPendingSection").classList.contains("hidden")) {
+      await showStatsPending();
+    }
   }catch(e){
     setText("approveMsg", e.message, false);
   }
@@ -681,6 +697,12 @@ async function confirmReject(){
     setText("schedMsg","반려 완료", true);
     await loadSchedules();
     await loadPendingAlert();
+    await loadStats();
+    
+    // 통계 탭의 PENDING 섹션이 열려있으면 새로고침
+    if(!document.getElementById("statsPendingSection").classList.contains("hidden")) {
+      await showStatsPending();
+    }
   }catch(e){
     setText("rejectMsg", e.message, false);
   }
@@ -924,6 +946,9 @@ document.getElementById("closePendingAlert").addEventListener("click", () => {
   document.getElementById("pendingAlert").classList.add("hidden");
 });
 
+document.getElementById("statPendingCard").addEventListener("click", showStatsPending);
+document.getElementById("closeStatsPending").addEventListener("click", closeStatsPending);
+
 // stats functions
 async function loadStats(){
   try{
@@ -940,6 +965,70 @@ async function loadStats(){
   }catch(e){
     console.error("통계 로드 실패:", e);
   }
+}
+
+// 통계 탭에서 PENDING 일정 보기
+async function showStatsPending(){
+  try{
+    const list = await fetchJSON(`${API_BASE}/admin/schedules?status=PENDING`, { headers: authHeaders() });
+    
+    const container = document.getElementById("statsPendingList");
+    container.innerHTML = "";
+    
+    if(list.length === 0) {
+      container.innerHTML = '<div class="p-4 rounded bg-gray-50 border text-sm text-center">승인 대기 중인 일정이 없습니다.</div>';
+      document.getElementById("statsPendingSection").classList.remove("hidden");
+      return;
+    }
+    
+    list.forEach(item => {
+      const html = `
+        <div class="border rounded p-4 bg-orange-50 border-orange-200">
+          <div class="flex items-start gap-3">
+            <div class="flex-1">
+              <div class="font-semibold text-sm mb-2">
+                📅 ${item.date} | 🏛️ ${item.display_name} | ⏰ ${item.start_time}~${item.end_time}
+              </div>
+              <div class="text-sm text-gray-700">
+                <div><strong>신청인:</strong> ${item.owner_name || "-"} (${item.owner_org || "-"})</div>
+                <div class="mt-1"><strong>사유:</strong> ${item.memo || "-"}</div>
+              </div>
+              <div class="mt-3 flex gap-2">
+                <button class="stats-approve px-4 py-2 rounded bg-green-600 text-white text-sm hover:bg-green-700" data-id="${item.id}">
+                  승인
+                </button>
+                <button class="stats-reject px-4 py-2 rounded bg-red-600 text-white text-sm hover:bg-red-700" data-id="${item.id}">
+                  반려
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      container.innerHTML += html;
+    });
+    
+    // 승인/반려 버튼 이벤트
+    document.querySelectorAll(".stats-approve").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await openApprove(btn.dataset.id);
+      });
+    });
+    
+    document.querySelectorAll(".stats-reject").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await openReject(btn.dataset.id);
+      });
+    });
+    
+    document.getElementById("statsPendingSection").classList.remove("hidden");
+  }catch(e){
+    console.error("PENDING 일정 로드 실패:", e);
+  }
+}
+
+function closeStatsPending(){
+  document.getElementById("statsPendingSection").classList.add("hidden");
 }
 
 async function cleanupOldSchedules(){
