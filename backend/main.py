@@ -34,7 +34,7 @@ JWT_ALG = "HS256"
 JWT_EXPIRE_MIN = int(os.getenv("JWT_EXPIRE_MIN", "240"))
 
 OPEN_HOUR = 9
-CLOSE_HOUR = 18  # end_time max 18:00
+CLOSE_HOUR = 22  # end_time max 22:00
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/admin/login")
@@ -174,7 +174,7 @@ def validate_time_range(st: time, et: time):
     open_t = time(OPEN_HOUR, 0)
     close_t = time(CLOSE_HOUR, 0)
     if st < open_t or et > close_t:
-        raise HTTPException(status_code=400, detail="Time must be within 09:00~18:00")
+        raise HTTPException(status_code=400, detail="Time must be within 09:00~22:00")
 
 def overlaps(st1: time, et1: time, st2: time, et2: time) -> bool:
     return (st1 < et2) and (st2 < et1)

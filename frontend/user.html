@@ -66,9 +66,12 @@
 const API_BASE = window.location.origin;
 document.getElementById("apiBaseLabel").textContent = API_BASE;
 
-const OPEN_H = 9, CLOSE_H = 18;
+const OPEN_H = 9, CLOSE_H = 22;
 const times = [];
-for (let h = OPEN_H; h <= CLOSE_H; h++) times.push(String(h).padStart(2,"0")+":00");
+for (let h = OPEN_H; h <= CLOSE_H; h++) {
+  times.push(String(h).padStart(2,"0")+":00");
+  if (h < CLOSE_H) times.push(String(h).padStart(2,"0")+":30");
+}
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function setMsg(text, ok=true){
@@ -131,13 +134,13 @@ function disableUnavailable(){
   [...startSel.options].forEach(o => o.disabled = false);
   [...endSel.options].forEach(o => o.disabled = false);
 
-  // UX 간단 버전: 시작/종료 각각 1시간 블록 기준으로 막기
+  // UX 간단 버전: 시작/종료 각각 30분 블록 기준으로 막기
   for(const opt of startSel.options){
-    const st = toMin(opt.value), et = st + 60;
+    const st = toMin(opt.value), et = st + 30;
     if(busy.some(([bs,be]) => overlaps(st, et, bs, be))) opt.disabled = true;
   }
   for(const opt of endSel.options){
-    const et = toMin(opt.value), st = et - 60;
+    const et = toMin(opt.value), st = et - 30;
     if(busy.some(([bs,be]) => overlaps(st, et, bs, be))) opt.disabled = true;
   }
 }
