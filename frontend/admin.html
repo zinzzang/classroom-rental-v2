@@ -31,6 +31,21 @@
 
   <!-- 앱 -->
   <div id="app" class="hidden space-y-6">
+    <!-- PENDING 알림 -->
+    <div id="pendingAlert" class="hidden bg-orange-50 border-2 border-orange-400 rounded-lg p-4">
+      <div class="flex items-start gap-3">
+        <div class="text-orange-600 text-3xl">⚠️</div>
+        <div class="flex-1">
+          <div class="font-bold text-orange-800 text-lg mb-2">승인 대기 중인 대관 신청</div>
+          <div id="pendingList" class="space-y-2"></div>
+          <button id="gotoPendingBtn" class="mt-3 px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700">
+            일정 관리로 이동하여 승인/반려하기
+          </button>
+        </div>
+        <button id="closePendingAlert" class="text-gray-500 hover:text-gray-700 text-xl">✕</button>
+      </div>
+    </div>
+
     <div class="flex gap-3">
       <button id="tabRooms" class="px-4 py-2 rounded bg-blue-600 text-white">강의실 관리</button>
       <button id="tabSchedules" class="px-4 py-2 rounded bg-white border">일정 관리</button>
@@ -326,6 +341,7 @@ async function login(){
     app.classList.remove("hidden");
     await loadRooms();
     await loadSchedules();
+    await loadPendingAlert();
   }catch(e){
     setText("loginMsg", e.message, false);
   }
@@ -595,6 +611,7 @@ async function confirmApprove(){
     closeApprove();
     setText("schedMsg","승인 완료", true);
     await loadSchedules();
+    await loadPendingAlert();
   }catch(e){
     setText("approveMsg", e.message, false);
   }
@@ -626,6 +643,7 @@ async function confirmReject(){
     closeReject();
     setText("schedMsg","반려 완료", true);
     await loadSchedules();
+    await loadPendingAlert();
   }catch(e){
     setText("rejectMsg", e.message, false);
   }
@@ -789,6 +807,16 @@ document.getElementById("approveConfirm").addEventListener("click", confirmAppro
 document.getElementById("cleanupBtn").addEventListener("click", cleanupOldSchedules);
 document.getElementById("loadTimetable").addEventListener("click", loadTimetable);
 
+document.getElementById("gotoPendingBtn").addEventListener("click", () => {
+  document.getElementById("pendingAlert").classList.add("hidden");
+  filterStatus.value = "PENDING";
+  showSchedules();
+});
+
+document.getElementById("closePendingAlert").addEventListener("click", () => {
+  document.getElementById("pendingAlert").classList.add("hidden");
+});
+
 // stats functions
 async function loadStats(){
   try{
@@ -821,6 +849,42 @@ async function cleanupOldSchedules(){
     await loadSchedules();
   }catch(e){
     setText("cleanupMsg", e.message, false);
+  }
+}
+
+// PENDING 알림 로드
+async function loadPendingAlert(){
+  try{
+    const list = await fetchJSON(`${API_BASE}/admin/schedules?status=PENDING`, { headers: authHeaders() });
+    
+    if(list.length === 0) {
+      document.getElementById("pendingAlert").classList.add("hidden");
+      return;
+    }
+
+    const pendingList = document.getElementById("pendingList");
+    pendingList.innerHTML = "";
+    
+    list.forEach(item => {
+      const html = `
+        <div class="bg-white rounded border border-orange-300 p-3">
+          <div class="font-semibold text-sm">
+            📅 ${item.date} | 🏛️ ${item.display_name} | ⏰ ${item.start_time}~${item.end_time}
+          </div>
+          <div class="text-sm text-gray-600 mt-1">
+            신청인: ${item.owner_name || "-"} (${item.owner_org || "-"})
+          </div>
+          <div class="text-xs text-gray-500 mt-1">
+            ${item.memo || ""}
+          </div>
+        </div>
+      `;
+      pendingList.innerHTML += html;
+    });
+
+    document.getElementById("pendingAlert").classList.remove("hidden");
+  }catch(e){
+    console.error("PENDING 알림 로드 실패:", e);
   }
 }
 
@@ -914,7 +978,10 @@ document.getElementById("timetableDate").value = todayStr();
   if(token()){
     loginBox.classList.add("hidden");
     app.classList.remove("hidden");
-    loadRooms().then(loadSchedules);
+    loadRooms().then(() => {
+      loadSchedules();
+      loadPendingAlert();
+    });
   }
 })();
 </script>
