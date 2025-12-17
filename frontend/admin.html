@@ -133,6 +133,13 @@
         </div>
       </div>
 
+      <div class="flex justify-between items-center mb-3">
+        <div class="flex gap-2 items-center">
+          <button id="selectAllBtn" class="px-3 py-1.5 rounded border text-sm">전체 선택</button>
+          <button id="deleteSelectedBtn" class="px-3 py-1.5 rounded bg-red-600 text-white text-sm">선택 삭제</button>
+          <span id="selectedCount" class="text-sm text-gray-600"></span>
+        </div>
+      </div>
       <div id="schedList" class="space-y-3"></div>
 
       <!-- 편집 모달 -->
@@ -491,24 +498,29 @@ async function loadSchedules(){
 
       schedList.innerHTML += `
         <div class="border rounded p-4">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="font-semibold">
-              ${it.date} · ${it.display_name} · ${it.start_time}~${it.end_time} ${badge} ${colorEmoji}
-            </div>
-            <div class="flex gap-2">
-              ${actions}
-              <button class="edit px-3 py-1.5 rounded border" data-id="${it.id}">수정</button>
-              <button class="del px-3 py-1.5 rounded bg-gray-900 text-white" data-id="${it.id}">삭제</button>
-            </div>
-          </div>
+          <div class="flex items-start gap-3">
+            <input type="checkbox" class="schedule-checkbox mt-1" data-id="${it.id}" />
+            <div class="flex-1">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="font-semibold">
+                  ${it.date} · ${it.display_name} · ${it.start_time}~${it.end_time} ${badge} ${colorEmoji}
+                </div>
+                <div class="flex gap-2">
+                  ${actions}
+                  <button class="edit px-3 py-1.5 rounded border" data-id="${it.id}">수정</button>
+                  <button class="del px-3 py-1.5 rounded bg-gray-900 text-white" data-id="${it.id}">삭제</button>
+                </div>
+              </div>
 
-          <div class="mt-2 text-sm text-gray-700 space-y-1">
-            <div><span class="font-semibold">Category:</span> ${it.category}</div>
-            <div><span class="font-semibold">Color:</span> ${colorEmoji} ${it.color || "-"}</div>
-            <div><span class="font-semibold">Title:</span> ${it.title || "-"}</div>
-            <div><span class="font-semibold">Owner:</span> ${it.owner_name || "-"} (${it.owner_org || "-"})</div>
-            <div><span class="font-semibold">Memo:</span> ${it.memo || "-"}</div>
-            ${it.reject_reason ? `<div class="text-red-700"><span class="font-semibold">Reject:</span> ${it.reject_reason}</div>` : ``}
+              <div class="mt-2 text-sm text-gray-700 space-y-1">
+                <div><span class="font-semibold">Category:</span> ${it.category}</div>
+                <div><span class="font-semibold">Color:</span> ${colorEmoji} ${it.color || "-"}</div>
+                <div><span class="font-semibold">Title:</span> ${it.title || "-"}</div>
+                <div><span class="font-semibold">Owner:</span> ${it.owner_name || "-"} (${it.owner_org || "-"})</div>
+                <div><span class="font-semibold">Memo:</span> ${it.memo || "-"}</div>
+                ${it.reject_reason ? `<div class="text-red-700"><span class="font-semibold">Reject:</span> ${it.reject_reason}</div>` : ``}
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -518,6 +530,13 @@ async function loadSchedules(){
     document.querySelectorAll(".reject").forEach(b => b.addEventListener("click", () => openReject(b.dataset.id)));
     document.querySelectorAll(".edit").forEach(b => b.addEventListener("click", () => openEdit(b.dataset.id, list)));
     document.querySelectorAll(".del").forEach(b => b.addEventListener("click", () => delSchedule(b.dataset.id)));
+    
+    // 체크박스 이벤트
+    document.querySelectorAll(".schedule-checkbox").forEach(cb => {
+      cb.addEventListener("change", updateSelectedCount);
+    });
+    
+    updateSelectedCount();
   }catch(e){
     setText("schedMsg", e.message, false);
   }
@@ -734,6 +753,73 @@ async function delSchedule(id){
   }
 }
 
+// 선택 개수 업데이트
+function updateSelectedCount(){
+  const checkboxes = document.querySelectorAll(".schedule-checkbox");
+  const checked = document.querySelectorAll(".schedule-checkbox:checked");
+  const count = checked.length;
+  
+  const countEl = document.getElementById("selectedCount");
+  if(count > 0) {
+    countEl.textContent = `${count}개 선택됨`;
+  } else {
+    countEl.textContent = "";
+  }
+}
+
+// 전체 선택/해제
+function toggleSelectAll(){
+  const checkboxes = document.querySelectorAll(".schedule-checkbox");
+  const allChecked = document.querySelectorAll(".schedule-checkbox:checked").length === checkboxes.length;
+  
+  checkboxes.forEach(cb => {
+    cb.checked = !allChecked;
+  });
+  
+  updateSelectedCount();
+}
+
+// 선택된 일정 삭제
+async function deleteSelected(){
+  const checked = document.querySelectorAll(".schedule-checkbox:checked");
+  if(checked.length === 0) {
+    return setText("schedMsg", "삭제할 일정을 선택해주세요.", false);
+  }
+  
+  if(!confirm(`선택한 ${checked.length}개의 일정을 삭제하시겠습니까?`)) return;
+  
+  try{
+    setText("schedMsg", "삭제 중...", true);
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    for(const cb of checked) {
+      const id = cb.getAttribute("data-id");
+      try {
+        await fetchJSON(`${API_BASE}/admin/schedules/${id}`, { 
+          method:"DELETE", 
+          headers: authHeaders() 
+        });
+        successCount++;
+      } catch(e) {
+        failCount++;
+        console.error(`일정 ${id} 삭제 실패:`, e);
+      }
+    }
+    
+    if(failCount > 0) {
+      setText("schedMsg", `${successCount}개 삭제 완료, ${failCount}개 실패`, false);
+    } else {
+      setText("schedMsg", `${successCount}개 일정 삭제 완료`, true);
+    }
+    
+    await loadSchedules();
+  }catch(e){
+    setText("schedMsg", e.message, false);
+  }
+}
+
 // DOM refs
 const loginBox = document.getElementById("loginBox");
 const app = document.getElementById("app");
@@ -812,6 +898,9 @@ filterDate.addEventListener("change", loadSchedules);
 filterStatus.addEventListener("change", loadSchedules);
 
 document.getElementById("addScheduleBtn").addEventListener("click", addSchedule);
+
+document.getElementById("selectAllBtn").addEventListener("click", toggleSelectAll);
+document.getElementById("deleteSelectedBtn").addEventListener("click", deleteSelected);
 
 document.getElementById("editCancel").addEventListener("click", closeEdit);
 document.getElementById("editSave").addEventListener("click", saveEdit);
