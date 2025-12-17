@@ -378,6 +378,14 @@ def public_schedule(date_str: str = Query(..., alias="date"), db: Session = Depe
 
 @app.post("/public/reservations")
 def public_create_reservation(req: PublicScheduleReq, db: Session = Depends(get_db)):
+    # 필수 필드 검증
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=400, detail="이름을 입력해주세요.")
+    if not req.org or not req.org.strip():
+        raise HTTPException(status_code=400, detail="소속을 입력해주세요.")
+    if not req.reason or not req.reason.strip():
+        raise HTTPException(status_code=400, detail="신청 사유를 입력해주세요.")
+    
     d = parse_date(req.date)
     st = parse_time(req.start_time)
     et = parse_time(req.end_time)
