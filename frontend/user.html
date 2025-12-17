@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>강의실 대여 - 사용자</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+<div class="max-w-5xl mx-auto p-6">
+  <div class="flex items-end justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-3xl font-bold">강의실 대여 (사용자)</h1>
+      <p class="text-gray-600 mt-1">사용 중 시간만 표시됩니다. 일정 상세는 노출되지 않습니다.</p>
+    </div>
+    <div class="text-sm text-gray-600">API: <span id="apiBaseLabel"></span></div>
+  </div>
+
+  <div class="bg-white rounded shadow p-5 mb-6">
+    <div class="flex flex-wrap items-end gap-4">
+      <div>
+        <label class="text-sm font-semibold">날짜</label>
+        <input id="date" type="date" class="border rounded p-2 block" />
+      </div>
+      <div>
+        <label class="text-sm font-semibold">공간</label>
+        <select id="classroom" class="border rounded p-2 block"></select>
+      </div>
+      <button id="refresh" class="px-4 py-2 bg-gray-900 text-white rounded">현황 불러오기</button>
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+    <div class="bg-white rounded shadow p-5">
+      <h2 class="text-xl font-semibold mb-3">사용 중 시간</h2>
+      <div id="schedule" class="space-y-2 text-sm"></div>
+    </div>
+
+    <div class="bg-white rounded shadow p-5">
+      <h2 class="text-xl font-semibold mb-3">대여 신청 (승인 대기)</h2>
+
+      <div class="grid grid-cols-2 gap-3">
+        <input id="name" class="border rounded p-2" placeholder="이름" />
+        <input id="org" class="border rounded p-2" placeholder="소속" />
+        <input id="reason" class="border rounded p-2 col-span-2" placeholder="신청 사유" />
+        <div>
+          <label class="text-sm font-semibold">시작</label>
+          <select id="start" class="border rounded p-2 w-full"></select>
+        </div>
+        <div>
+          <label class="text-sm font-semibold">종료</label>
+          <select id="end" class="border rounded p-2 w-full"></select>
+        </div>
+      </div>
+
+      <div class="mt-4 flex gap-3 items-center">
+        <button id="submit" class="px-4 py-2 bg-blue-600 text-white rounded">신청</button>
+        <span id="msg" class="text-sm"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 환경에 따라 자동으로 API 주소 설정
+const API_BASE = window.location.origin;
+document.getElementById("apiBaseLabel").textContent = API_BASE;
+
+const OPEN_H = 9, CLOSE_H = 18;
+const times = [];
+for (let h = OPEN_H; h <= CLOSE_H; h++) times.push(String(h).padStart(2,"0")+":00");
+
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function setMsg(text, ok=true){
+  const el = document.getElementById("msg");
+  el.textContent = text;
+  el.className = ok ? "text-sm text-green-700" : "text-sm text-red-700";
+}
+async function fetchJSON(url, options){
+  const res = await fetch(url, options);
+  const data = await res.json().catch(()=> ({}));
+  if(!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+}
+function toMin(t){ const [h,m]=t.split(":").map(Number); return h*60+m; }
+function overlaps(st1, et1, st2, et2){ return st1 < et2 && st2 < et1; }
+
+let cache = null;
+
+async function loadClassrooms(){
+  const rooms = await fetchJSON(`${API_BASE}/public/classrooms`);
+  const sel = document.getElementById("classroom");
+  sel.innerHTML = rooms.map(r => `<option value="${r.id}">${r.display_name}</option>`).join("");
+}
+
+function renderTimeOptions(){
+  document.getElementById("start").innerHTML = times.slice(0, times.length-1).map(t=>`<option value="${t}">${t}</option>`).join("");
+  document.getElementById("end").innerHTML = times.slice(1).map(t=>`<option value="${t}">${t}</option>`).join("");
+}
+
+function currentRoomBusy(){
+  if(!cache) return [];
+  const id = Number(document.getElementById("classroom").value);
+  const room = cache.rooms.find(r => r.classroom_id === id);
+  return room?.busy || [];
+}
+
+function renderBusy(){
+  const box = document.getElementById("schedule");
+  box.innerHTML = "";
+  const busy = currentRoomBusy();
+  if(busy.length === 0){
+    box.innerHTML = `<div class="p-2 rounded bg-green-50 border">사용 중 시간 없음</div>`;
+    return;
+  }
+  busy.forEach(b => {
+    box.innerHTML += `
+      <div class="p-2 rounded border bg-gray-50 flex justify-between">
+        <div class="font-semibold">${b.start} ~ ${b.end}</div>
+        <div class="text-gray-600">사용 중</div>
+      </div>
+    `;
+  });
+}
+
+function disableUnavailable(){
+  const busy = currentRoomBusy().map(b => [toMin(b.start), toMin(b.end)]);
+  const startSel = document.getElementById("start");
+  const endSel = document.getElementById("end");
+
+  [...startSel.options].forEach(o => o.disabled = false);
+  [...endSel.options].forEach(o => o.disabled = false);
+
+  // UX 간단 버전: 시작/종료 각각 1시간 블록 기준으로 막기
+  for(const opt of startSel.options){
+    const st = toMin(opt.value), et = st + 60;
+    if(busy.some(([bs,be]) => overlaps(st, et, bs, be))) opt.disabled = true;
+  }
+  for(const opt of endSel.options){
+    const et = toMin(opt.value), st = et - 60;
+    if(busy.some(([bs,be]) => overlaps(st, et, bs, be))) opt.disabled = true;
+  }
+}
+
+async function loadSchedule(){
+  const d = document.getElementById("date").value;
+  cache = await fetchJSON(`${API_BASE}/public/schedule?date=${encodeURIComponent(d)}`);
+  renderBusy();
+  disableUnavailable();
+}
+
+async function submit(){
+  try{
+    setMsg("");
+    const classroom_id = Number(document.getElementById("classroom").value);
+    const date = document.getElementById("date").value;
+    const start_time = document.getElementById("start").value;
+    const end_time = document.getElementById("end").value;
+
+    const name = document.getElementById("name").value.trim();
+    const org = document.getElementById("org").value.trim();
+    const reason = document.getElementById("reason").value.trim();
+
+    if(!name || !org || !reason) return setMsg("이름/소속/사유를 입력하세요.", false);
+    if(toMin(end_time) <= toMin(start_time)) return setMsg("종료 시간이 시작 시간보다 뒤여야 합니다.", false);
+
+    await fetchJSON(`${API_BASE}/public/reservations`, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ classroom_id, date, start_time, end_time, name, org, reason })
+    });
+
+    setMsg("신청 완료! (승인 대기)", true);
+    await loadSchedule();
+  }catch(e){
+    setMsg(e.message, false);
+  }
+}
+
+document.getElementById("refresh").addEventListener("click", loadSchedule);
+document.getElementById("submit").addEventListener("click", submit);
+document.getElementById("classroom").addEventListener("change", () => { renderBusy(); disableUnavailable(); });
+
+(async function init(){
+  document.getElementById("date").value = todayStr();
+  renderTimeOptions();
+  await loadClassrooms();
+  await loadSchedule();
+})();
+</script>
+</body>
+</html>

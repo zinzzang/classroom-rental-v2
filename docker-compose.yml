@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_URL=sqlite:///./classroom_rental.db
+      - DEFAULT_ADMIN_USERNAME=admin
+      - DEFAULT_ADMIN_PASSWORD=admin1234
+      - JWT_SECRET=change-me-in-production
+    volumes:
+      - ./data:/app/backend/data
+    restart: unless-stopped
+
